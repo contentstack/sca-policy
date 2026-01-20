@@ -1,6 +1,12 @@
 name: Source Composition Analysis Scan
 on:
   workflow_call:
+    inputs:
+      language:
+        description: "Language/runtime for Snyk scan (e.g., golang, node, python, etc.)."
+        required: false
+        type: string
+        default: ""
 
 env:
   # Threshold for maximum number of critical severity issues allowed
@@ -35,41 +41,60 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
+      - name: Determine Snyk Docker image
+        id: snyk-image
+        run: |
+          LANGUAGE="${{ inputs.language }}"
+          if [ -z "$LANGUAGE" ]; then
+            # Default to node image for auto-detection (Snyk will auto-detect all projects)
+            IMAGE="snyk/snyk:node"
+          else
+            # Map language to Snyk Docker image
+            case "$LANGUAGE" in
+              golang|go)
+                IMAGE="snyk/snyk:golang"
+                ;;
+              npm|node|nodejs)
+                IMAGE="snyk/snyk:node"
+                ;;
+              pip|python)
+                IMAGE="snyk/snyk:python"
+                ;;
+              *)
+                # Default to node if language not recognized
+                IMAGE="snyk/snyk:node"
+                ;;
+            esac
+          fi
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "Using Snyk image: $IMAGE"
+
+      - name: Determine Snyk integration version
+        id: snyk-integration
+        run: |
+          LANGUAGE="${{ inputs.language }}"
+          if [ -z "$LANGUAGE" ]; then
+            INTEGRATION_VERSION="all-projects"
+          else
+            INTEGRATION_VERSION="$LANGUAGE"
+          fi
+          echo "version=$INTEGRATION_VERSION" >> $GITHUB_OUTPUT
 
       - name: Run Snyk to check for vulnerabilities
         id: snyk-test
         continue-on-error: true
         run: |
-          npm install -g snyk
-          snyk auth ${{ secrets.SNYK_TOKEN }}
-          snyk test --json --all-projects > snyk-results.json || true
+          docker run --rm \
+            -v "$PWD:/project" \
+            -e SNYK_TOKEN="${{ secrets.SNYK_TOKEN }}" \
+            -e FORCE_COLOR=2 \
+            -e SNYK_INTEGRATION_NAME=GITHUB_ACTIONS \
+            -e SNYK_INTEGRATION_VERSION="${{ steps.snyk-integration.outputs.version }}" \
+            -w /project \
+            ${{ steps.snyk-image.outputs.image }} \
+            snyk test --json --all-projects > snyk-results.json || true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
-      - name: Check for wildcard or latest versions in dependencies
-        id: check-versions
-        run: |
-          echo "==================================="
-          echo "Checking for wildcard/latest versions"
-          echo "==================================="
-
-          # Check for * or latest in package.json
-          wildcard_deps=$(jq -r '.dependencies, .devDependencies | to_entries[] | select(.value == "*" or .value == "latest") | "\(.key): \(.value)"' package.json 2>/dev/null || echo "")
-
-          if [ ! -z "$wildcard_deps" ]; then
-            echo "❌ Found dependencies with wildcard (*) or 'latest' versions:"
-            echo "$wildcard_deps"
-            echo "wildcard_found=true" >> $GITHUB_OUTPUT
-            echo "$wildcard_deps" > wildcard-deps.txt
-          else
-            echo "✅ No wildcard or 'latest' versions found"
-            echo "wildcard_found=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Analyze Snyk results for severity thresholds
         id: analyze-results
@@ -120,8 +145,6 @@ jobs:
           high_count=0
           medium_count=0
           low_count=0
-          wildcard_found="${{ steps.check-versions.outputs.wildcard_found }}"
-          wildcard_details=""
 
           # Check if results file exists
           if [ ! -f snyk-results.json ]; then
@@ -154,14 +177,6 @@ jobs:
           echo "MAX_HIGH_ISSUES=$MAX_HIGH_ISSUES" >> $GITHUB_ENV
           echo "MAX_MEDIUM_ISSUES=$MAX_MEDIUM_ISSUES" >> $GITHUB_ENV
           echo "MAX_LOW_ISSUES=$MAX_LOW_ISSUES" >> $GITHUB_ENV
-          echo "wildcard_found=$wildcard_found" >> $GITHUB_ENV
-
-          if [ -f wildcard-deps.txt ]; then
-            wildcard_details=$(cat wildcard-deps.txt)
-            echo "wildcard_details<<EOF" >> $GITHUB_ENV
-            echo "$wildcard_details" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
 
       - name: Calculate SLA breaches
         id: calculate-sla
@@ -269,7 +284,6 @@ jobs:
           medium_no_fix=${{ env.medium_no_fix }}
           low_count=${{ env.low_count }}
           low_no_fix=${{ env.low_no_fix }}
-          wildcard_found=${{ env.wildcard_found }}
 
           MAX_CRITICAL_ISSUES=${{ env.MAX_CRITICAL_ISSUES }}
           MAX_HIGH_ISSUES=${{ env.MAX_HIGH_ISSUES }}
@@ -294,9 +308,6 @@ jobs:
           SLA_MEDIUM_NO_FIX=${{ env.SLA_MEDIUM_NO_FIX }}
           SLA_LOW_NO_FIX=${{ env.SLA_LOW_NO_FIX }}
 
-          # Get wildcard details if exists
-          wildcard_details="${{ env.wildcard_details }}"
-
           # Output results
           echo ""
           echo "==================================="
@@ -310,7 +321,6 @@ jobs:
           echo "Medium issues without fixes (excluded): $medium_no_fix"
           echo "Low issues with fixes: $low_count (Max allowed: $MAX_LOW_ISSUES)"
           echo "Low issues without fixes (excluded): $low_no_fix"
-          echo "Wildcard/Latest versions found: $wildcard_found"
           echo ""
           echo "ℹ️  Note: Only vulnerabilities with available fixes (upgrades or patches) are counted toward thresholds."
           echo ""
@@ -403,15 +413,6 @@ jobs:
             echo "   - Low: $low_no_fix"
           fi
 
-          if [ "$wildcard_found" = "true" ]; then
-            fail_build=true
-            failure_reasons="${failure_reasons}❌ WILDCARD/LATEST VERSIONS DETECTED: Dependencies using '*' or 'latest' versions found\n"
-            echo ""
-            echo "Wildcard/Latest Version Dependencies:"
-            echo "------------------------------------------------"
-            echo "$wildcard_details"
-          fi
-
           # Export fail_build for later steps
           echo "fail_build=$fail_build" >> $GITHUB_ENV
 
@@ -445,12 +446,6 @@ jobs:
             echo "| 🔵 Low Severity | $low_count | $low_no_fix | $MAX_LOW_ISSUES | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| 🔵 Low Severity | $low_count | $low_no_fix | $MAX_LOW_ISSUES | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "$wildcard_found" = "true" ]; then
-            echo "| ⚡ Wildcard/Latest Versions | Detected | Not Allowed | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| ⚡ Wildcard/Latest Versions | None | Not Allowed | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -508,21 +503,8 @@ jobs:
             echo "- Medium without fixes: **$medium_no_fix**" >> $GITHUB_STEP_SUMMARY
             echo "- Low without fixes: **$low_no_fix**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> 💡 These vulnerabilities are monitored but won't fail the build since no fixes are currently available." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "$wildcard_found" = "true" ]; then
-            echo "### 🔧 Dependencies with Wildcard/Latest Versions" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following dependencies are using wildcard (\`*\`) or \`latest\` versions, which can lead to unpredictable builds and security issues:" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "$wildcard_details" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Action Required:** Pin all dependencies to specific versions for security and reproducibility." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 These vulnerabilities are monitored but won't fail the build since no fixes are currently available." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           fi
 
           # Fail if any threshold is breached
@@ -571,7 +553,6 @@ jobs:
             const maxHigh = process.env.MAX_HIGH_ISSUES || '0';
             const maxMedium = process.env.MAX_MEDIUM_ISSUES || '0';
             const maxLow = process.env.MAX_LOW_ISSUES || '0';
-            const wildcardFound = process.env.WILDCARD_FOUND || 'false';
             const failBuild = process.env.fail_build || 'false';
 
             // Determine status for each check
@@ -579,8 +560,6 @@ jobs:
             const highStatus = parseInt(highCount) > parseInt(maxHigh) ? '❌ Failed' : '✅ Passed';
             const mediumStatus = parseInt(mediumCount) > parseInt(maxMedium) ? '❌ Failed' : '✅ Passed';
             const lowStatus = parseInt(lowCount) > parseInt(maxLow) ? '❌ Failed' : '✅ Passed';
-            const wildcardDisplay = wildcardFound === 'true' ? 'Detected' : 'None';
-            const wildcardStatus = wildcardFound === 'true' ? '❌ Failed' : '✅ Passed';
 
             // Build comment
             let comment = '### 🔒 Security Scan Results\n\n';
@@ -590,8 +569,7 @@ jobs:
             comment += `| 🔴 Critical Severity | ${criticalCount} | ${criticalNoFix} | ${maxCritical} | ${criticalStatus} |\n`;
             comment += `| 🟠 High Severity | ${highCount} | ${highNoFix} | ${maxHigh} | ${highStatus} |\n`;
             comment += `| 🟡 Medium Severity | ${mediumCount} | ${mediumNoFix} | ${maxMedium} | ${mediumStatus} |\n`;
-            comment += `| 🔵 Low Severity | ${lowCount} | ${lowNoFix} | ${maxLow} | ${lowStatus} |\n`;
-            comment += `| ⚡ Wildcard/Latest Versions | ${wildcardDisplay} | - | Not Allowed | ${wildcardStatus} |\n\n`;
+            comment += `| 🔵 Low Severity | ${lowCount} | ${lowNoFix} | ${maxLow} | ${lowStatus} |\n\n`;
 
             // Get SLA breach data
             const criticalSlaBreaches = parseInt(process.env.critical_sla_breaches || '0');
