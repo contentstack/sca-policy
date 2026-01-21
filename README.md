@@ -46,46 +46,35 @@ jobs:
         secrets: inherit
 ```
 
-### Example: Complete Workflow File
-
-Here's a complete example of how to use the Snyk SCA scan workflow:
-
-```yaml
-name: Security and Quality Checks
-
-on:
-    push:
-        branches: [main, master]
-    pull_request:
-        branches: [main, master]
-    workflow_dispatch:
-
-jobs:
-    security-scan:
-        name: Snyk Security Scan
-        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
-        secrets: inherit
-```
-
 
 ## Available Workflows
 
 ### [Source Composition Analysis Scan](.github/workflows/snyk-sca-scan.yml)
 
-A comprehensive security scanning workflow that uses Snyk to detect vulnerabilities in your project dependencies. This workflow:
+A comprehensive security scanning workflow that uses Snyk to detect vulnerabilities in your project dependencies. This workflow supports **multiple languages** including Go, Node.js, Python, and more.
 
-- **Scans all projects** in your repository for open-source vulnerabilities
+**Features:**
+- **Multi-language support**: Golang, Node.js, Python, and auto-detection for other languages
+- **Scans dependencies** for open-source vulnerabilities
 - **Enforces severity thresholds** for critical, high, medium, and low severity issues
 - **Tracks SLA breaches** based on days since vulnerability publication
-- **Detects wildcard/latest versions** in dependencies
-- **Posts detailed results** as PR comments
+- **Posts detailed results** as PR comments with actionable fixes
 - **Fails builds** when security thresholds are exceeded
-
-**Prerequisites:**
-- `package.json` (and preferably `package-lock.json`) must be present in the root directory of your repository for the wildcard version check to function properly
 
 **Required Secrets:**
 - `SNYK_TOKEN`: Your Snyk authentication token
+
+**Additional Secrets (for Go projects with private dependencies):**
+- `USER_NAME`: GitHub username for private repository access
+- `PERSONAL_ACCESS_TOKEN`: GitHub Personal Access Token with repo access
+
+**Input Parameters:**
+
+| Parameter | Description | Required | Default |
+|-----------|-------------|----------|---------|
+| `language` | Language/runtime for Snyk scan (e.g., `golang`, `node`, `python`) | No | Auto-detect |
+| `args` | Additional arguments to pass to Snyk (e.g., `--all-projects`, `--file=go.mod`) | No | `""` |
+| `go-version` | Go version to use for Golang projects (e.g., `1.23`, `1.24`, `stable`) | No | `stable` |
 
 **Optional Repository Variables:**
 - `MAX_CRITICAL_ISSUES`: Maximum allowed critical issues (default: 1)
@@ -104,5 +93,16 @@ A comprehensive security scanning workflow that uses Snyk to detect vulnerabilit
 **Triggers:**
 - Pull requests (opened, synchronize, reopened)
 - Manual workflow dispatch
+
+#### Usage Examples
+
+See the [usage/snyk-sca-scan](./usage/snyk-sca-scan) folder for complete workflow examples including:
+- **Golang** - With custom Go version and private dependency support
+- **Node.js** - With monorepo support
+- **Python** - Basic Python project setup
+- **Auto-detect** - Automatic language detection
+- **Monorepo** - Multi-project repository setup
+
+Each example includes copy-paste ready workflow files and detailed instructions.
 
 ---

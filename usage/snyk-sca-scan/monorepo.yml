@@ -1,0 +1,15 @@
+name: Security Scan - Monorepo
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "node"  # or "golang", "python", etc.
+            args: "--all-projects"  # Scan all detected projects

@@ -1,0 +1,16 @@
+name: Security Scan - Golang
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "golang"
+            go-version: "1.24" # or "stable", "1.24", etc.
+            args: "" # Optional: Add custom Snyk args like "--all-projects"

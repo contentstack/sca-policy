@@ -1,0 +1,14 @@
+name: Security Scan - Python
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "python"
