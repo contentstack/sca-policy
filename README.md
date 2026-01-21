@@ -46,46 +46,35 @@ jobs:
         secrets: inherit
 ```
 
-### Example: Complete Workflow File
-
-Here's a complete example of how to use the Snyk SCA scan workflow:
-
-```yaml
-name: Security and Quality Checks
-
-on:
-    push:
-        branches: [main, master]
-    pull_request:
-        branches: [main, master]
-    workflow_dispatch:
-
-jobs:
-    security-scan:
-        name: Snyk Security Scan
-        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
-        secrets: inherit
-```
-
 
 ## Available Workflows
 
 ### [Source Composition Analysis Scan](.github/workflows/snyk-sca-scan.yml)
 
-A comprehensive security scanning workflow that uses Snyk to detect vulnerabilities in your project dependencies. This workflow:
+A comprehensive security scanning workflow that uses Snyk to detect vulnerabilities in your project dependencies. This workflow supports **multiple languages** including Go, Node.js, Python, and more.
 
-- **Scans all projects** in your repository for open-source vulnerabilities
+**Features:**
+- **Multi-language support**: Golang, Node.js, Python, and auto-detection for other languages
+- **Scans dependencies** for open-source vulnerabilities
 - **Enforces severity thresholds** for critical, high, medium, and low severity issues
 - **Tracks SLA breaches** based on days since vulnerability publication
-- **Detects wildcard/latest versions** in dependencies
-- **Posts detailed results** as PR comments
+- **Posts detailed results** as PR comments with actionable fixes
 - **Fails builds** when security thresholds are exceeded
-
-**Prerequisites:**
-- `package.json` (and preferably `package-lock.json`) must be present in the root directory of your repository for the wildcard version check to function properly
 
 **Required Secrets:**
 - `SNYK_TOKEN`: Your Snyk authentication token
+
+**Additional Secrets (for Go projects with private dependencies):**
+- `USER_NAME`: GitHub username for private repository access
+- `PERSONAL_ACCESS_TOKEN`: GitHub Personal Access Token with repo access
+
+**Input Parameters:**
+
+| Parameter | Description | Required | Default |
+|-----------|-------------|----------|---------|
+| `language` | Language/runtime for Snyk scan (e.g., `golang`, `node`, `python`) | No | Auto-detect |
+| `args` | Additional arguments to pass to Snyk (e.g., `--all-projects`, `--file=go.mod`) | No | `""` |
+| `go-version` | Go version to use for Golang projects (e.g., `1.23`, `1.24`, `stable`) | No | `stable` |
 
 **Optional Repository Variables:**
 - `MAX_CRITICAL_ISSUES`: Maximum allowed critical issues (default: 1)
@@ -104,5 +93,114 @@ A comprehensive security scanning workflow that uses Snyk to detect vulnerabilit
 **Triggers:**
 - Pull requests (opened, synchronize, reopened)
 - Manual workflow dispatch
+
+#### Usage Examples
+
+Here are complete examples of how to use this workflow for different languages:
+
+##### Example 1: Go/Golang Project
+
+```yaml
+name: Security Scan - Golang
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "golang"
+            go-version: "1.23"  # or "stable", "1.24", etc.
+            args: ""  # Optional: Add custom Snyk args like "--all-projects"
+```
+
+**Important for Go projects with private dependencies:**
+- Add `USER_NAME` and `PERSONAL_ACCESS_TOKEN` secrets to your repository (Settings → Secrets and variables → Actions)
+- These are required to authenticate with private Go modules during the scan
+
+##### Example 2: Node.js Project
+
+```yaml
+name: Security Scan - Node.js
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "node"
+            args: "--all-projects"  # Optional: Scan all projects in monorepo
+```
+
+##### Example 3: Python Project
+
+```yaml
+name: Security Scan - Python
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "python"
+
+```
+
+##### Example 4: Auto-detect Language (Default)
+
+```yaml
+name: Security Scan - Auto Detect
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        # No 'with' block - Snyk will auto-detect the language
+```
+
+> **⚠️ Note:** For Golang projects with private package dependencies, do not rely on auto-detect. Use Example 1 instead and explicitly set `language: "golang"`.
+
+##### Example 5: Monorepo with Multiple Projects
+
+```yaml
+name: Security Scan - Monorepo
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    workflow_dispatch:
+
+jobs:
+    security-sca:
+        name: Snyk SCA Scan
+        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
+        secrets: inherit
+        with:
+            language: "node"  # or "golang", "python", etc.
+            args: "--all-projects"  # Scan all detected projects
+```
 
 ---
