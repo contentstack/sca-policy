@@ -2,21 +2,9 @@ name: Source Composition Analysis Scan
 on:
   workflow_call:
     inputs:
-      language:
-        description: "Language/runtime for Snyk scan (e.g., golang, node, python, etc.)."
-        required: false
+      snyk-report-artifact:
+        required: true
         type: string
-        default: ""
-      args:
-        description: "Additional arguments to pass to Snyk command (e.g., --all-projects, --file=go.mod). --json is automatically added."
-        required: false
-        type: string
-        default: ""
-      go-version:
-        description: "Go version to use for Golang projects (e.g., '1.23', '1.24', 'stable'). Only used when language is golang."
-        required: false
-        type: string
-        default: "stable"
 
 env:
   # Threshold for maximum number of critical severity issues allowed
@@ -51,116 +39,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Go (for Golang projects)
-        if: inputs.language == 'golang' || inputs.language == 'go'
-        uses: actions/setup-go@v5
+      - name: Download Snyk report
+        uses: actions/download-artifact@v4
         with:
-          go-version: ${{ inputs.go-version }}
-
-      - name: Configure Git for private Go modules (for Golang projects)
-        if: inputs.language == 'golang' || inputs.language == 'go'
+          name: ${{ inputs.snyk-report-artifact  }}
+          path: .
+      - name: Verify file
         run: |
-          if [ -n "${{ secrets.USER_NAME }}" ] && [ -n "${{ secrets.PERSONAL_ACCESS_TOKEN }}" ]; then
-            git config --global url."https://${{ secrets.USER_NAME }}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com".insteadOf "https://github.com"
-            echo "✓ Git configured for private Go modules using USER_NAME and PERSONAL_ACCESS_TOKEN"
-          elif [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
-            git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-            echo "✓ Git configured for private Go modules using GITHUB_TOKEN"
-          else
-            echo "⚠️  Warning: No authentication configured. Private Go modules will fail to download."
-            echo "    Please set USER_NAME + PERSONAL_ACCESS_TOKEN secrets for private dependencies."
-          fi
-
-      - name: Download Go dependencies (for Golang projects)
-        if: inputs.language == 'golang' || inputs.language == 'go'
-        run: |
-          if [ -f go.mod ]; then
-            echo "Downloading Go dependencies..."
-            go mod download
-            # Rebuild the standard library to fix build ID mismatches
-            echo "Rebuilding Go standard library..."
-            go install std
-          fi
-
-      - name: Install Snyk CLI (for Golang projects)
-        if: inputs.language == 'golang' || inputs.language == 'go'
-        uses: snyk/actions/setup@master
-
-      - name: Run Snyk Test
-        id: snyk-test
-        continue-on-error: true
-        run: |
-          LANG="${{ inputs.language }}"
-
-          echo "==================================="
-          echo "Running Snyk Test for: ${LANG:-auto-detect}"
-          echo "==================================="
-
-          # ============================================
-          # GOLANG: Use Snyk CLI directly (requires special setup)
-          # ============================================
-          if [ "$LANG" = "golang" ] || [ "$LANG" = "go" ]; then
-            USER_ARGS="${{ inputs.args }}"
-            
-            # Build the command with --json flag
-            if [ -n "$USER_ARGS" ]; then
-              # Remove --json if user provided it to avoid duplication
-              CLEANED_ARGS=$(echo "$USER_ARGS" | sed -E 's/(^|[[:space:]])--json([[:space:]]|$)/ /g' | sed 's/  */ /g' | sed 's/^ *//;s/ *$//')
-              if [ -n "$CLEANED_ARGS" ]; then
-                SNYK_ARGS="--json $CLEANED_ARGS"
-              else
-                SNYK_ARGS="--json"
-              fi
-            else
-              SNYK_ARGS="--json"
-            fi
-            
-            echo "Command: snyk test $SNYK_ARGS"
-            snyk test $SNYK_ARGS > snyk.json || true
-            
-          # ============================================
-          # NODE.JS: Use official Snyk Node.js action
-          # ============================================
-          elif [ "$LANG" = "node" ] || [ "$LANG" = "npm" ] || [ "$LANG" = "nodejs" ]; then
-            echo "Using Snyk Node.js action..."
-            # Create a temporary script to call the action via Docker
-            docker run --rm \
-              -e SNYK_TOKEN="${{ secrets.SNYK_TOKEN }}" \
-              -v "$(pwd):/project" \
-              -w /project \
-              snyk/snyk:node \
-              snyk test --json ${{ inputs.args }} > snyk.json || true
-            
-          # ============================================
-          # PYTHON: Use official Snyk Python action
-          # ============================================
-          elif [ "$LANG" = "python" ] || [ "$LANG" = "pip" ]; then
-            echo "Using Snyk Python action..."
-            docker run --rm \
-              -e SNYK_TOKEN="${{ secrets.SNYK_TOKEN }}" \
-              -v "$(pwd):/project" \
-              -w /project \
-              snyk/snyk:python \
-              snyk test --json ${{ inputs.args }} > snyk.json || true
-            
-          # ============================================
-          # DEFAULT/AUTO-DETECT: Use Snyk with auto-detection
-          # ============================================
-          else
-            echo "Using Snyk auto-detection..."
-            docker run --rm \
-              -e SNYK_TOKEN="${{ secrets.SNYK_TOKEN }}" \
-              -v "$(pwd):/project" \
-              -w /project \
-              snyk/snyk:node \
-              snyk test --json ${{ inputs.args }} > snyk.json || true
-          fi
-
-          echo "==================================="
-          echo "Snyk test completed"
-          echo "==================================="
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          ls -l
+          test -f snyk-report.json
 
       - name: Analyze Snyk results for severity thresholds
         id: analyze-results
@@ -213,22 +100,22 @@ jobs:
           low_count=0
 
           # Check if results file exists
-          if [ ! -f snyk.json ]; then
+          if [ ! -f snyk-report.json ]; then
             echo "Error: Snyk results file not found"
             exit 1
           fi
 
           # Parse JSON and count severities - ONLY count vulnerabilities with fixes available
-          critical_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
-          high_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
-          medium_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
-          low_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
+          critical_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable == true or .isPatchable == true))] | length' snyk-report.json 2>/dev/null || echo 0)
+          high_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable == true or .isPatchable == true))] | length' snyk-report.json 2>/dev/null || echo 0)
+          medium_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable == true or .isPatchable == true))] | length' snyk-report.json 2>/dev/null || echo 0)
+          low_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable == true or .isPatchable == true))] | length' snyk-report.json 2>/dev/null || echo 0)
 
           # Count vulnerabilities without fixes
-          critical_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
-          high_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
-          medium_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
-          low_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
+          critical_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable != true and .isPatchable != true))] | length' snyk-report.json 2>/dev/null || echo 0)
+          high_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable != true and .isPatchable != true))] | length' snyk-report.json 2>/dev/null || echo 0)
+          medium_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable != true and .isPatchable != true))] | length' snyk-report.json 2>/dev/null || echo 0)
+          low_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable != true and .isPatchable != true))] | length' snyk-report.json 2>/dev/null || echo 0)
 
           # Export counts to GITHUB_ENV for next steps
           echo "critical_count=$critical_count" >> $GITHUB_ENV
@@ -291,14 +178,14 @@ jobs:
                  select(.severity == $sev and (.isUpgradable == true or .isPatchable == true)) |
                  select(.publicationTime != null) |
                  select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400))] | 
-                length' snyk.json 2>/dev/null || echo 0
+                length' snyk-report.json 2>/dev/null || echo 0
             else
               jq --arg current "$current_time" --arg threshold "$threshold" --arg sev "$severity" -r '
                 [.vulnerabilities[]? | 
                  select(.severity == $sev and (.isUpgradable != true and .isPatchable != true)) |
                  select(.publicationTime != null) |
                  select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400))] | 
-                length' snyk.json 2>/dev/null || echo 0
+                length' snyk-report.json 2>/dev/null || echo 0
             fi
           }
 
@@ -598,7 +485,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: snyk-results
-          path: snyk.json
+          path: snyk-report.json
           retention-days: 30
 
       - name: Comment PR with Security Scan Results
@@ -681,14 +568,14 @@ jobs:
               comment += `| 🔵 Low | ${lowSlaBreaches} | ${lowSlaBreachesNoFix} | ${lowSlaStatus} |\n\n`;
             }
 
-            // Read snyk.json to extract vulnerability details
+            // Read snyk-report.json to extract vulnerability details
             const fs = require('fs');
             let snykData = null;
             try {
-              const snykResults = fs.readFileSync('snyk.json', 'utf8');
+              const snykResults = fs.readFileSync('snyk-report.json', 'utf8');
               snykData = JSON.parse(snykResults);
             } catch (error) {
-              console.log('Could not read snyk.json:', error.message);
+              console.log('Could not read snyk-report.json:', error.message);
             }
 
             // Add detailed SLA breach listings if we have data
