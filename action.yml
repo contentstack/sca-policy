@@ -77,7 +77,7 @@ runs:
         SLA_HIGH_NO_FIX: ${{ inputs.SLA_HIGH_NO_FIX }}
         SLA_MEDIUM_NO_FIX: ${{ inputs.SLA_MEDIUM_NO_FIX }}
         SLA_LOW_NO_FIX: ${{ inputs.SLA_LOW_NO_FIX }}
-      run: ./snyk-parser.sh
+      run: bash ${{ github.action_path }}/snyk-parser.sh
 
     - name: Comment PR with Security Scan Results
       if: ${{ github.event_name == 'pull_request' }}
