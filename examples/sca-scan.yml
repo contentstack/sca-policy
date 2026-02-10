@@ -1,0 +1,74 @@
+name: Source Composition Analysis Scan
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact: snyk-report
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create sample Snyk report
+        run: |
+          cat > snyk-report.json <<'JSON'
+          {
+            "vulnerabilities": [
+              {
+                "id": "SNYK-CRITICAL-1",
+                "packageName": "example-lib",
+                "version": "1.0.0",
+                "severity": "critical",
+                "isUpgradable": true,
+                "isPatchable": false,
+                "publicationTime": "2024-01-01T00:00:00Z",
+                "title": "Critical vuln in example-lib",
+                "upgradePath": ["1.0.0","1.2.0"]
+              },
+              {
+                "id": "SNYK-HIGH-1",
+                "packageName": "another-lib",
+                "version": "2.3.4",
+                "severity": "high",
+                "isUpgradable": true,
+                "isPatchable": false,
+                "publicationTime": "2025-01-01T00:00:00Z",
+                "title": "High vuln in another-lib",
+                "upgradePath": ["2.3.4","2.3.5"]
+              },
+              {
+                "id": "SNYK-MEDIUM-NOFIX",
+                "packageName": "no-fix-lib",
+                "version": "0.1.0",
+                "severity": "medium",
+                "isUpgradable": false,
+                "isPatchable": false,
+                "publicationTime": "2023-06-01T00:00:00Z",
+                "title": "Medium vuln without fix"
+              }
+            ]
+          }
+          JSON
+      - name: Upload sample report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-report
+          path: snyk-report.json
+
+  analyze:
+    needs: generate-report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Snyk SCA Scan action
+        uses: ./.github/actions/snyk-sca-scan
+        with:
+          snyk-report-artifact: snyk-report
+          MAX_CRITICAL_ISSUES: '1'
+          MAX_HIGH_ISSUES: '1'
+          MAX_MEDIUM_ISSUES: '10'
+          MAX_LOW_ISSUES: '10'

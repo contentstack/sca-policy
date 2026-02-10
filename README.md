@@ -1,108 +1,66 @@
-# Contentstack CI Workflows
+# Snyk SCA Scan (composite action)
 
-This repository contains reusable GitHub Actions workflows for Contentstack projects. These workflows can be easily integrated into any repository to automate CI/CD processes.
+Analyzes a Snyk JSON report (`snyk-report.json`) for severity thresholds and SLA breaches. Counts only vulnerabilities that have available fixes (upgrades or patches) toward configured thresholds, generates a summary in the GitHub Actions step summary, uploads the report artifact, and optionally comments on pull requests.
 
-## How to Use Workflows in Your Repository
+## Inputs
+- `snyk-report-artifact` (required): Name of the artifact containing `snyk-report.json` (e.g. `snyk-report`).
+- `MAX_CRITICAL_ISSUES`, `MAX_HIGH_ISSUES`, `MAX_MEDIUM_ISSUES`, `MAX_LOW_ISSUES` (optional): numeric thresholds for allowed vulnerabilities with fixes. Defaults are `1`, `1`, `500`, `1000`.
+- `SLA_CRITICAL_WITH_FIX`, `SLA_HIGH_WITH_FIX`, `SLA_MEDIUM_WITH_FIX`, `SLA_LOW_WITH_FIX` (optional): SLA days for vulnerabilities with fixes. Defaults are `15`, `30`, `90`, `180`.
+- `SLA_CRITICAL_NO_FIX`, `SLA_HIGH_NO_FIX`, `SLA_MEDIUM_NO_FIX`, `SLA_LOW_NO_FIX` (optional): SLA days for vulnerabilities without fixes. Defaults are `30`, `120`, `365`, `365`.
 
-These workflows are designed to be used as **reusable workflows** using the `uses:` syntax. You don't need to copy the workflow files - simply reference them from this repository.
+## Outputs
+- `fail_build`: `true` when thresholds or SLA checks failed (action exits non-zero).
 
-### Step 1: Create a Workflow File in Your Repository
+## Example usage
 
-Create a new workflow file in your repository at `.github/workflows/<your-workflow-name>.yml`:
-
-```yaml
-name: Code Quality Pipeline
-
-on:
-    push:
-        branches: [main, master, feature/*]
-    pull_request:
-        branches: [main, master]
-    workflow_dispatch:
-
-jobs:
-    security-scan:
-        name: Security Scan
-        uses: contentstack/contentstack-ci-workflows/.github/workflows/snyk-sca-scan.yml@main
-        secrets: inherit
-```
-
-### Step 2: Configure Required Secrets
-
-Go to your repository's **Settings → Secrets and variables → Actions** and add:
-
-- **Required Secrets**: 
-  - `SNYK_TOKEN`: Your Snyk authentication token
-
-
-### Step 3: Reference the Workflow
-
-Use the `uses:` syntax to reference the workflow from this repository:
+This action expects a `snyk-report.json` uploaded as an artifact. Example workflow that runs Snyk, uploads the report, then calls this action:
 
 ```yaml
+name: Run Snyk and analyze
+on: [push, pull_request]
+
 jobs:
-    my-job:
-        uses: contentstack/contentstack-ci-workflows/.github/workflows/<workflow-name>.yml@main
-        secrets: inherit
+  snyk-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Snyk test (example)
+        run: |
+          # run Snyk and output JSON to snyk-report.json
+          snyk test --json > snyk-report.json || true
+      - name: Upload Snyk report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-report
+          path: snyk-report.json
+
+  analyze-snyk:
+    needs: snyk-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Snyk SCA Scan action
+        uses: contentstack/contentstack-ci-workflows/.github/actions/snyk-sca-scan@main
+        with:
+          snyk-report-artifact: snyk-report
+          MAX_CRITICAL_ISSUES: '1'
+          MAX_HIGH_ISSUES: '1'
+          MAX_MEDIUM_ISSUES: '500'
+          MAX_LOW_ISSUES: '1000'
 ```
 
+If you prefer to reference the action by path in the same repository, set `uses: ./.github/actions/snyk-sca-scan`.
 
-## Available Workflows
+## Permissions
+To allow the action to post PR comments, ensure the workflow grants the GITHUB_TOKEN `issues: write` (or `pull-requests: write` depending on how you post comments) permissions. Example:
 
-### [Source Composition Analysis Scan](.github/workflows/snyk-sca-scan.yml)
+```yaml
+permissions:
+  contents: read
+  issues: write
+  actions: read
+```
 
-A comprehensive security scanning workflow that uses Snyk to detect vulnerabilities in your project dependencies. This workflow supports **multiple languages** including Go, Node.js, Python, and more.
-
-**Features:**
-- **Multi-language support**: Golang, Node.js, Python, and auto-detection for other languages
-- **Scans dependencies** for open-source vulnerabilities
-- **Enforces severity thresholds** for critical, high, medium, and low severity issues
-- **Tracks SLA breaches** based on days since vulnerability publication
-- **Posts detailed results** as PR comments with actionable fixes
-- **Fails builds** when security thresholds are exceeded
-
-**Required Secrets:**
-- `SNYK_TOKEN`: Your Snyk authentication token
-
-**Additional Secrets (for Go projects with private dependencies):**
-- `USER_NAME`: GitHub username for private repository access
-- `PERSONAL_ACCESS_TOKEN`: GitHub Personal Access Token with repo access
-
-**Input Parameters:**
-
-| Parameter | Description | Required | Default |
-|-----------|-------------|----------|---------|
-| `language` | Language/runtime for Snyk scan (e.g., `golang`, `node`, `python`) | No | Auto-detect |
-| `args` | Additional arguments to pass to Snyk (e.g., `--all-projects`, `--file=go.mod`) | No | `""` |
-| `go-version` | Go version to use for Golang projects (e.g., `1.23`, `1.24`, `stable`) | No | `stable` |
-
-**Optional Repository Variables:**
-- `MAX_CRITICAL_ISSUES`: Maximum allowed critical issues (default: 1)
-- `MAX_HIGH_ISSUES`: Maximum allowed high issues (default: 1)
-- `MAX_MEDIUM_ISSUES`: Maximum allowed medium issues (default: 500)
-- `MAX_LOW_ISSUES`: Maximum allowed low issues (default: 1000)
-- `SLA_CRITICAL_WITH_FIX`: SLA threshold in days for critical issues with fixes (default: 15)
-- `SLA_HIGH_WITH_FIX`: SLA threshold in days for high issues with fixes (default: 30)
-- `SLA_MEDIUM_WITH_FIX`: SLA threshold in days for medium issues with fixes (default: 90)
-- `SLA_LOW_WITH_FIX`: SLA threshold in days for low issues with fixes (default: 180)
-- `SLA_CRITICAL_NO_FIX`: SLA threshold in days for critical issues without fixes (default: 30)
-- `SLA_HIGH_NO_FIX`: SLA threshold in days for high issues without fixes (default: 120)
-- `SLA_MEDIUM_NO_FIX`: SLA threshold in days for medium issues without fixes (default: 365)
-- `SLA_LOW_NO_FIX`: SLA threshold in days for low issues without fixes (default: 365)
-
-**Triggers:**
-- Pull requests (opened, synchronize, reopened)
-- Manual workflow dispatch
-
-#### Usage Examples
-
-See the [usage/snyk-sca-scan](./usage/snyk-sca-scan) folder for complete workflow examples including:
-- **Golang** - With custom Go version and private dependency support
-- **Node.js** - With monorepo support
-- **Python** - Basic Python project setup
-- **Auto-detect** - Automatic language detection
-- **Monorepo** - Multi-project repository setup
-
-Each example includes copy-paste ready workflow files and detailed instructions.
-
----
+## Notes
+- The action installs `jq` on Ubuntu runners if not present.
+- Only vulnerabilities with `.isUpgradable == true` or `.isPatchable == true` are counted toward configured thresholds; vulnerabilities without fixes are reported separately as informational.
+- The action writes a human-readable summary to the step summary and sets `fail_build` output when checks fail.

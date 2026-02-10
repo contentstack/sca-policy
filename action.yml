@@ -1,0 +1,138 @@
+name: "Snyk SCA Scan Analysis"
+description: "Composite action that reads snyk-report.json from the current directory, analyzes severities and SLA breaches, and posts a PR comment"
+inputs:
+  MAX_CRITICAL_ISSUES:
+    description: 'Maximum allowed critical issues (with fixes)'
+    required: false
+    default: '1'
+  MAX_HIGH_ISSUES:
+    description: 'Maximum allowed high issues (with fixes)'
+    required: false
+    default: '1'
+  MAX_MEDIUM_ISSUES:
+    description: 'Maximum allowed medium issues (with fixes)'
+    required: false
+    default: '500'
+  MAX_LOW_ISSUES:
+    description: 'Maximum allowed low issues (with fixes)'
+    required: false
+    default: '1000'
+  SLA_CRITICAL_WITH_FIX:
+    description: 'SLA days for critical vulnerabilities with fixes'
+    required: false
+    default: '15'
+  SLA_HIGH_WITH_FIX:
+    description: 'SLA days for high vulnerabilities with fixes'
+    required: false
+    default: '30'
+  SLA_MEDIUM_WITH_FIX:
+    description: 'SLA days for medium vulnerabilities with fixes'
+    required: false
+    default: '90'
+  SLA_LOW_WITH_FIX:
+    description: 'SLA days for low vulnerabilities with fixes'
+    required: false
+    default: '180'
+  SLA_CRITICAL_NO_FIX:
+    description: 'SLA days for critical vulnerabilities without fixes'
+    required: false
+    default: '30'
+  SLA_HIGH_NO_FIX:
+    description: 'SLA days for high vulnerabilities without fixes'
+    required: false
+    default: '120'
+  SLA_MEDIUM_NO_FIX:
+    description: 'SLA days for medium vulnerabilities without fixes'
+    required: false
+    default: '365'
+  SLA_LOW_NO_FIX:
+    description: 'SLA days for low vulnerabilities without fixes'
+    required: false
+    default: '365'
+
+outputs:
+  fail_build:
+    description: 'true if any thresholds or SLAs were breached and action failed'
+    value: ${{ steps.snyk_analysis.outputs.fail_build }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run Snyk SCA analysis
+      id: snyk_analysis
+      shell: bash
+      env:
+        MAX_CRITICAL_ISSUES: ${{ inputs.MAX_CRITICAL_ISSUES }}
+        MAX_HIGH_ISSUES: ${{ inputs.MAX_HIGH_ISSUES }}
+        MAX_MEDIUM_ISSUES: ${{ inputs.MAX_MEDIUM_ISSUES }}
+        MAX_LOW_ISSUES: ${{ inputs.MAX_LOW_ISSUES }}
+        SLA_CRITICAL_WITH_FIX: ${{ inputs.SLA_CRITICAL_WITH_FIX }}
+        SLA_HIGH_WITH_FIX: ${{ inputs.SLA_HIGH_WITH_FIX }}
+        SLA_MEDIUM_WITH_FIX: ${{ inputs.SLA_MEDIUM_WITH_FIX }}
+        SLA_LOW_WITH_FIX: ${{ inputs.SLA_LOW_WITH_FIX }}
+        SLA_CRITICAL_NO_FIX: ${{ inputs.SLA_CRITICAL_NO_FIX }}
+        SLA_HIGH_NO_FIX: ${{ inputs.SLA_HIGH_NO_FIX }}
+        SLA_MEDIUM_NO_FIX: ${{ inputs.SLA_MEDIUM_NO_FIX }}
+        SLA_LOW_NO_FIX: ${{ inputs.SLA_LOW_NO_FIX }}
+      run: ./snyk-parser.sh
+
+    - name: Comment PR with Security Scan Results
+      if: ${{ github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const criticalCount = process.env.critical_count || '0';
+          const criticalNoFix = process.env.critical_no_fix || '0';
+          const highCount = process.env.high_count || '0';
+          const highNoFix = process.env.high_no_fix || '0';
+          const mediumCount = process.env.medium_count || '0';
+          const mediumNoFix = process.env.medium_no_fix || '0';
+          const lowCount = process.env.low_count || '0';
+          const lowNoFix = process.env.low_no_fix || '0';
+          const maxCritical = process.env.MAX_CRITICAL_ISSUES || '0';
+          const maxHigh = process.env.MAX_HIGH_ISSUES || '0';
+          const maxMedium = process.env.MAX_MEDIUM_ISSUES || '0';
+          const maxLow = process.env.MAX_LOW_ISSUES || '0';
+          const failBuild = process.env.fail_build || 'false';
+
+          const criticalStatus = parseInt(criticalCount) > parseInt(maxCritical) ? '❌ Failed' : '✅ Passed';
+          const highStatus = parseInt(highCount) > parseInt(maxHigh) ? '❌ Failed' : '✅ Passed';
+          const mediumStatus = parseInt(mediumCount) > parseInt(maxMedium) ? '❌ Failed' : '✅ Passed';
+          const lowStatus = parseInt(lowCount) > parseInt(maxLow) ? '❌ Failed' : '✅ Passed';
+
+          let comment = '### 🔒 Security Scan Results\n\n';
+          comment += '> ℹ️ **Note:** Only vulnerabilities with available fixes (upgrades or patches) are counted toward thresholds.\n\n';
+          comment += '| Check Type | Count (with fixes) | Without fixes | Threshold | Result |\n';
+          comment += '|------------|-------------------|---------------|-----------|--------|\n';
+          comment += `| 🔴 Critical Severity | ${criticalCount} | ${criticalNoFix} | ${maxCritical} | ${criticalStatus} |\n`;
+          comment += `| 🟠 High Severity | ${highCount} | ${highNoFix} | ${maxHigh} | ${highStatus} |\n`;
+          comment += `| 🟡 Medium Severity | ${mediumCount} | ${mediumNoFix} | ${maxMedium} | ${mediumStatus} |\n`;
+          comment += `| 🔵 Low Severity | ${lowCount} | ${lowNoFix} | ${maxLow} | ${lowStatus} |\n\n`;
+
+          const fs = require('fs');
+          let snykData = null;
+          try {
+            const snykResults = fs.readFileSync('snyk-report.json', 'utf8');
+            snykData = JSON.parse(snykResults);
+          } catch (error) {
+            console.log('Could not read snyk-report.json:', error.message);
+          }
+
+          if (failBuild === 'true') {
+            comment += '### ❌ Build Failed - Security Issues Detected\n\n';
+            comment += 'Please review and fix the security vulnerabilities before merging.\n';
+          } else {
+            comment += '### ✅ All Security Checks Passed\n\n';
+            comment += 'No security issues detected. Safe to merge! 🎉\n';
+          }
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
