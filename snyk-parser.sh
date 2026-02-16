@@ -188,35 +188,38 @@ echo "fail_build=$fail_build" >> "$GITHUB_ENV" || true
   echo
 
   total_sla_breaches=$((critical_sla_breaches + high_sla_breaches + medium_sla_breaches + low_sla_breaches + critical_sla_breaches_no_fix + high_sla_breaches_no_fix + medium_sla_breaches_no_fix + low_sla_breaches_no_fix))
+  
+  echo "### ⏱️ SLA Breach Summary"
+  echo
   if [ "$total_sla_breaches" -gt 0 ]; then
-    echo "### ⏱️ SLA Breach Summary"
-    echo
     echo "> ⚠️ Warning: The following vulnerabilities have exceeded their SLA thresholds (days since publication)."
-    echo
-    echo "| Severity | Breaches (with fixes) | Breaches (no fixes) | SLA Threshold (with/no fixes) | Status |"
-    echo "|----------|----------------------|---------------------|------------------------------|--------|"
-    if [ "$critical_sla_breaches" -gt 0 ] || [ "$critical_sla_breaches_no_fix" -gt 0 ]; then
-      echo "| 🔴 Critical | $critical_sla_breaches | $critical_sla_breaches_no_fix | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | ❌ Failed |"
-    else
-      echo "| 🔴 Critical | 0 | 0 | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | ✅ Passed |"
-    fi
-    if [ "$high_sla_breaches" -gt 0 ] || [ "$high_sla_breaches_no_fix" -gt 0 ]; then
-      echo "| 🟠 High | $high_sla_breaches | $high_sla_breaches_no_fix | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | ❌ Failed |"
-    else
-      echo "| 🟠 High | 0 | 0 | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | ✅ Passed |"
-    fi
-    if [ "$medium_sla_breaches" -gt 0 ] || [ "$medium_sla_breaches_no_fix" -gt 0 ]; then
-      echo "| 🟡 Medium | $medium_sla_breaches | $medium_sla_breaches_no_fix | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | ❌ Failed |"
-    else
-      echo "| 🟡 Medium | 0 | 0 | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | ✅ Passed |"
-    fi
-    if [ "$low_sla_breaches" -gt 0 ] || [ "$low_sla_breaches_no_fix" -gt 0 ]; then
-      echo "| 🔵 Low | $low_sla_breaches | $low_sla_breaches_no_fix | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | ❌ Failed |"
-    else
-      echo "| 🔵 Low | 0 | 0 | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | ✅ Passed |"
-    fi
-    echo
+  else
+    echo "> ✅ No SLA breaches detected. All vulnerabilities are within acceptable time thresholds."
   fi
+  echo
+  echo "| Severity | Breaches (with fixes) | Breaches (no fixes) | SLA Threshold (with/no fixes) | Status |"
+  echo "|----------|----------------------|---------------------|------------------------------|--------|"
+  if [ "$critical_sla_breaches" -gt 0 ] || [ "$critical_sla_breaches_no_fix" -gt 0 ]; then
+    echo "| 🔴 Critical | $critical_sla_breaches | $critical_sla_breaches_no_fix | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | ❌ Failed |"
+  else
+    echo "| 🔴 Critical | 0 | 0 | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | ✅ Passed |"
+  fi
+  if [ "$high_sla_breaches" -gt 0 ] || [ "$high_sla_breaches_no_fix" -gt 0 ]; then
+    echo "| 🟠 High | $high_sla_breaches | $high_sla_breaches_no_fix | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | ❌ Failed |"
+  else
+    echo "| 🟠 High | 0 | 0 | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | ✅ Passed |"
+  fi
+  if [ "$medium_sla_breaches" -gt 0 ] || [ "$medium_sla_breaches_no_fix" -gt 0 ]; then
+    echo "| 🟡 Medium | $medium_sla_breaches | $medium_sla_breaches_no_fix | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | ❌ Failed |"
+  else
+    echo "| 🟡 Medium | 0 | 0 | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | ✅ Passed |"
+  fi
+  if [ "$low_sla_breaches" -gt 0 ] || [ "$low_sla_breaches_no_fix" -gt 0 ]; then
+    echo "| 🔵 Low | $low_sla_breaches | $low_sla_breaches_no_fix | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | ❌ Failed |"
+  else
+    echo "| 🔵 Low | 0 | 0 | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | ✅ Passed |"
+  fi
+  echo
 
   if [ "$critical_no_fix" -gt 0 ] || [ "$high_no_fix" -gt 0 ] || [ "$medium_no_fix" -gt 0 ] || [ "$low_no_fix" -gt 0 ]; then
     echo "### ℹ️ Vulnerabilities Without Available Fixes (Informational Only)"
