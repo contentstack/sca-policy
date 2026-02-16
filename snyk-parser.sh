@@ -17,10 +17,10 @@ fi
 echo "Normalizing snyk.json structure..."
 if jq -e 'type == "array"' snyk.json >/dev/null 2>&1; then
   echo "  -> snyk.json is an array (multi-project output), merging all vulnerabilities..."
-  merged=$(jq '{ vulnerabilities: [ .[].vulnerabilities[]? ] }' snyk.json)
-  echo "$merged" > snyk.json
+  SNYK_DATA=$(jq '{ vulnerabilities: [ .[].vulnerabilities[]? ] }' snyk.json)
 else
-  echo "  -> snyk.json is a single object, no normalization needed"
+  echo "  -> snyk.json is a single object, reading as-is..."
+  SNYK_DATA=$(cat snyk.json)
 fi
 
 # Load thresholds from environment (inputs provided by action.yml)
@@ -39,15 +39,15 @@ SLA_MEDIUM_NO_FIX="${SLA_MEDIUM_NO_FIX:-365}"
 SLA_LOW_NO_FIX="${SLA_LOW_NO_FIX:-365}"
 
 echo "Counting vulnerabilities (only with fixes are counted toward thresholds)..."
-critical_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
-high_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
-medium_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
-low_count=$(jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable == true or .isPatchable == true))] | length' snyk.json 2>/dev/null || echo 0)
+critical_count=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable == true or .isPatchable == true))] | length' 2>/dev/null || echo 0)
+high_count=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable == true or .isPatchable == true))] | length' 2>/dev/null || echo 0)
+medium_count=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable == true or .isPatchable == true))] | length' 2>/dev/null || echo 0)
+low_count=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable == true or .isPatchable == true))] | length' 2>/dev/null || echo 0)
 
-critical_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
-high_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
-medium_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
-low_no_fix=$(jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable != true and .isPatchable != true))] | length' snyk.json 2>/dev/null || echo 0)
+critical_no_fix=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "critical" and (.isUpgradable != true and .isPatchable != true))] | length' 2>/dev/null || echo 0)
+high_no_fix=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "high" and (.isUpgradable != true and .isPatchable != true))] | length' 2>/dev/null || echo 0)
+medium_no_fix=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "medium" and (.isUpgradable != true and .isPatchable != true))] | length' 2>/dev/null || echo 0)
+low_no_fix=$(echo "$SNYK_DATA" | jq -r '[.vulnerabilities[]? | select(.severity == "low" and (.isUpgradable != true and .isPatchable != true))] | length' 2>/dev/null || echo 0)
 
 echo "Exporting counts to GITHUB_ENV..."
 echo "critical_count=$critical_count" >> "$GITHUB_ENV"
@@ -71,19 +71,19 @@ count_sla_breaches() {
   local has_fix=$2
   local threshold=$3
   if [ "$has_fix" = "true" ]; then
-    jq --arg current "$current_time" --arg threshold "$threshold" --arg sev "$severity" -r '
+    echo "$SNYK_DATA" | jq --arg current "$current_time" --arg threshold "$threshold" --arg sev "$severity" -r '
       [.vulnerabilities[]? |
        select(.severity == $sev and (.isUpgradable == true or .isPatchable == true)) |
        select(.publicationTime != null) |
        select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400))] |
-      length' snyk.json 2>/dev/null || echo 0
+      length' 2>/dev/null || echo 0
   else
-    jq --arg current "$current_time" --arg threshold "$threshold" --arg sev "$severity" -r '
+    echo "$SNYK_DATA" | jq --arg current "$current_time" --arg threshold "$threshold" --arg sev "$severity" -r '
       [.vulnerabilities[]? |
        select(.severity == $sev and (.isUpgradable != true and .isPatchable != true)) |
        select(.publicationTime != null) |
        select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400))] |
-      length' snyk.json 2>/dev/null || echo 0
+      length' 2>/dev/null || echo 0
   fi
 }
 
@@ -96,6 +96,7 @@ critical_sla_breaches_no_fix=$(count_sla_breaches "critical" "false" "$SLA_CRITI
 high_sla_breaches_no_fix=$(count_sla_breaches "high" "false" "$SLA_HIGH_NO_FIX")
 medium_sla_breaches_no_fix=$(count_sla_breaches "medium" "false" "$SLA_MEDIUM_NO_FIX")
 low_sla_breaches_no_fix=$(count_sla_breaches "low" "false" "$SLA_LOW_NO_FIX")
+
 
 echo "Exporting SLA counts to GITHUB_ENV..."
 echo "critical_sla_breaches=$critical_sla_breaches" >> "$GITHUB_ENV"
