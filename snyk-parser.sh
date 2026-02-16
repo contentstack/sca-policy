@@ -75,6 +75,7 @@ count_sla_breaches() {
       [.vulnerabilities[]? |
        select(.severity == $sev and (.isUpgradable == true or .isPatchable == true)) |
        select(.publicationTime != null) |
+       .publicationTime |= (. | sub("\\.[0-9]+Z$"; "Z")) |
        select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400))] |
       length' 2>/dev/null || echo 0
   else
@@ -82,6 +83,7 @@ count_sla_breaches() {
       [.vulnerabilities[]? |
        select(.severity == $sev and (.isUpgradable != true and .isPatchable != true)) |
        select(.publicationTime != null) |
+       .publicationTime |= (. | sub("\\.[0-9]+Z$"; "Z")) |
        select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400))] |
       length' 2>/dev/null || echo 0
   fi
