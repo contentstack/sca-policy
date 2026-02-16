@@ -96,13 +96,33 @@ runs:
           const maxLow = process.env.MAX_LOW_ISSUES || '0';
           const failBuild = process.env.fail_build || 'false';
 
+          // SLA breach counts
+          const criticalSla = process.env.critical_sla_breaches || '0';
+          const criticalSlaNoFix = process.env.critical_sla_breaches_no_fix || '0';
+          const highSla = process.env.high_sla_breaches || '0';
+          const highSlaNoFix = process.env.high_sla_breaches_no_fix || '0';
+          const mediumSla = process.env.medium_sla_breaches || '0';
+          const mediumSlaNoFix = process.env.medium_sla_breaches_no_fix || '0';
+          const lowSla = process.env.low_sla_breaches || '0';
+          const lowSlaNoFix = process.env.low_sla_breaches_no_fix || '0';
+
+          // SLA thresholds
+          const slaCriticalWithFix = process.env.SLA_CRITICAL_WITH_FIX || '15';
+          const slaCriticalNoFix = process.env.SLA_CRITICAL_NO_FIX || '30';
+          const slaHighWithFix = process.env.SLA_HIGH_WITH_FIX || '30';
+          const slaHighNoFix = process.env.SLA_HIGH_NO_FIX || '120';
+          const slaMediumWithFix = process.env.SLA_MEDIUM_WITH_FIX || '90';
+          const slaMediumNoFix = process.env.SLA_MEDIUM_NO_FIX || '365';
+          const slaLowWithFix = process.env.SLA_LOW_WITH_FIX || '180';
+          const slaLowNoFix = process.env.SLA_LOW_NO_FIX || '365';
+
           const criticalStatus = parseInt(criticalCount) > parseInt(maxCritical) ? '❌ Failed' : '✅ Passed';
           const highStatus = parseInt(highCount) > parseInt(maxHigh) ? '❌ Failed' : '✅ Passed';
           const mediumStatus = parseInt(mediumCount) > parseInt(maxMedium) ? '❌ Failed' : '✅ Passed';
           const lowStatus = parseInt(lowCount) > parseInt(maxLow) ? '❌ Failed' : '✅ Passed';
 
           let comment = '### 🔒 Security Scan Results\n\n';
-          comment += '> ℹ️ **Note:** Only vulnerabilities with available fixes (upgrades or patches) are counted toward thresholds.\n\n';
+          comment += '> ℹ️ Note: Only vulnerabilities with available fixes (upgrades or patches) are counted toward thresholds.\n\n';
           comment += '| Check Type | Count (with fixes) | Without fixes | Threshold | Result |\n';
           comment += '|------------|-------------------|---------------|-----------|--------|\n';
           comment += `| 🔴 Critical Severity | ${criticalCount} | ${criticalNoFix} | ${maxCritical} | ${criticalStatus} |\n`;
@@ -110,21 +130,45 @@ runs:
           comment += `| 🟡 Medium Severity | ${mediumCount} | ${mediumNoFix} | ${maxMedium} | ${mediumStatus} |\n`;
           comment += `| 🔵 Low Severity | ${lowCount} | ${lowNoFix} | ${maxLow} | ${lowStatus} |\n\n`;
 
-          const fs = require('fs');
-          let snykData = null;
-          try {
-            const snykResults = fs.readFileSync('snyk.json', 'utf8');
-            snykData = JSON.parse(snykResults);
-          } catch (error) {
-            console.log('Could not read snyk.json:', error.message);
+          const totalSlaBreaches = parseInt(criticalSla) + parseInt(criticalSlaNoFix) + 
+                                   parseInt(highSla) + parseInt(highSlaNoFix) +
+                                   parseInt(mediumSla) + parseInt(mediumSlaNoFix) +
+                                   parseInt(lowSla) + parseInt(lowSlaNoFix);
+
+          comment += '### ⏱️ SLA Breach Summary\n\n';
+          if (totalSlaBreaches > 0) {
+            comment += '> ⚠️ Warning: The following vulnerabilities have exceeded their SLA thresholds (days since publication).\n\n';
+          } else {
+            comment += '> ✅ No SLA breaches detected. All vulnerabilities are within acceptable time thresholds.\n\n';
+          }
+          comment += '| Severity | Breaches (with fixes) | Breaches (no fixes) | SLA Threshold (with/no fixes) | Status |\n';
+          comment += '|----------|----------------------|---------------------|------------------------------|--------|\n';
+
+          const criticalSlaStatus = (parseInt(criticalSla) > 0 || parseInt(criticalSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
+          const highSlaStatus = (parseInt(highSla) > 0 || parseInt(highSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
+          const mediumSlaStatus = (parseInt(mediumSla) > 0 || parseInt(mediumSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
+          const lowSlaStatus = (parseInt(lowSla) > 0 || parseInt(lowSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
+
+          comment += `| 🔴 Critical | ${criticalSla} | ${criticalSlaNoFix} | ${slaCriticalWithFix} / ${slaCriticalNoFix} days | ${criticalSlaStatus} |\n`;
+          comment += `| 🟠 High | ${highSla} | ${highSlaNoFix} | ${slaHighWithFix} / ${slaHighNoFix} days | ${highSlaStatus} |\n`;
+          comment += `| 🟡 Medium | ${mediumSla} | ${mediumSlaNoFix} | ${slaMediumWithFix} / ${slaMediumNoFix} days | ${mediumSlaStatus} |\n`;
+          comment += `| 🔵 Low | ${lowSla} | ${lowSlaNoFix} | ${slaLowWithFix} / ${slaLowNoFix} days | ${lowSlaStatus} |\n\n`;
+
+          if (parseInt(criticalNoFix) > 0 || parseInt(highNoFix) > 0 || parseInt(mediumNoFix) > 0 || parseInt(lowNoFix) > 0) {
+            comment += '### ℹ️ Vulnerabilities Without Available Fixes (Informational Only)\n\n';
+            comment += 'The following vulnerabilities were detected but **do not have fixes available** (no upgrade or patch). These are excluded from failure thresholds:\n\n';
+            comment += `- Critical without fixes: **${criticalNoFix}**\n`;
+            comment += `- High without fixes: **${highNoFix}**\n`;
+            comment += `- Medium without fixes: **${mediumNoFix}**\n`;
+            comment += `- Low without fixes: **${lowNoFix}**\n\n`;
           }
 
+          // Final status
           if (failBuild === 'true') {
-            comment += '### ❌ Build Failed - Security Issues Detected\n\n';
+            comment += '❌ BUILD FAILED - Security checks failed\n\n';
             comment += 'Please review and fix the security vulnerabilities before merging.\n';
           } else {
-            comment += '### ✅ All Security Checks Passed\n\n';
-            comment += 'No security issues detected. Safe to merge! 🎉\n';
+            comment += '✅ BUILD PASSED - All security checks passed\n\n';
           }
 
           github.rest.issues.createComment({
