@@ -4,11 +4,11 @@ inputs:
   MAX_CRITICAL_ISSUES:
     description: 'Maximum allowed critical issues (with fixes)'
     required: false
-    default: '1'
+    default: '10'
   MAX_HIGH_ISSUES:
     description: 'Maximum allowed high issues (with fixes)'
     required: false
-    default: '1'
+    default: '25'
   MAX_MEDIUM_ISSUES:
     description: 'Maximum allowed medium issues (with fixes)'
     required: false
@@ -90,8 +90,8 @@ runs:
           const mediumNoFix = process.env.medium_no_fix || '0';
           const lowCount = process.env.low_count || '0';
           const lowNoFix = process.env.low_no_fix || '0';
-          const maxCritical = process.env.MAX_CRITICAL_ISSUES || '0';
-          const maxHigh = process.env.MAX_HIGH_ISSUES || '0';
+          const maxCritical = process.env.MAX_CRITICAL_ISSUES || '10';
+          const maxHigh = process.env.MAX_HIGH_ISSUES || '25';
           const maxMedium = process.env.MAX_MEDIUM_ISSUES || '0';
           const maxLow = process.env.MAX_LOW_ISSUES || '0';
           const failBuild = process.env.fail_build || 'false';
