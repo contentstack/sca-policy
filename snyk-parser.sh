@@ -120,7 +120,9 @@ echo "SLA_LOW_NO_FIX=$SLA_LOW_NO_FIX" >> "$GITHUB_ENV"
 
 echo "Generating summary and checking thresholds..."
 fail_build=false
+warn_build=false
 failure_reasons=""
+warning_reasons=""
 
 if [ "$critical_count" -gt "$MAX_CRITICAL_ISSUES" ]; then
   fail_build=true
@@ -139,25 +141,43 @@ if [ "$low_count" -gt "$MAX_LOW_ISSUES" ]; then
   failure_reasons="${failure_reasons}❌ LOW SEVERITY THRESHOLD BREACHED: Found $low_count low issues (max allowed: $MAX_LOW_ISSUES)\n"
 fi
 
-if [ "$critical_sla_breaches" -gt 0 ] || [ "$critical_sla_breaches_no_fix" -gt 0 ]; then
+if [ "$critical_sla_breaches" -gt 0 ]; then
   fail_build=true
-  failure_reasons="${failure_reasons}❌ CRITICAL SLA BREACHES: With fixes: $critical_sla_breaches, No fixes: $critical_sla_breaches_no_fix\n"
+  failure_reasons="${failure_reasons}❌ CRITICAL SLA BREACHES (with fixes): $critical_sla_breaches\n"
 fi
-if [ "$high_sla_breaches" -gt 0 ] || [ "$high_sla_breaches_no_fix" -gt 0 ]; then
-  fail_build=true
-  failure_reasons="${failure_reasons}❌ HIGH SLA BREACHES: With fixes: $high_sla_breaches, No fixes: $high_sla_breaches_no_fix\n"
+if [ "$critical_sla_breaches_no_fix" -gt 0 ]; then
+  warn_build=true
+  warning_reasons="${warning_reasons}⚠️ CRITICAL SLA BREACHES (no fixes): $critical_sla_breaches_no_fix\n"
 fi
-if [ "$medium_sla_breaches" -gt 0 ] || [ "$medium_sla_breaches_no_fix" -gt 0 ]; then
+if [ "$high_sla_breaches" -gt 0 ]; then
   fail_build=true
-  failure_reasons="${failure_reasons}❌ MEDIUM SLA BREACHES: With fixes: $medium_sla_breaches, No fixes: $medium_sla_breaches_no_fix\n"
+  failure_reasons="${failure_reasons}❌ HIGH SLA BREACHES (with fixes): $high_sla_breaches\n"
 fi
-if [ "$low_sla_breaches" -gt 0 ] || [ "$low_sla_breaches_no_fix" -gt 0 ]; then
+if [ "$high_sla_breaches_no_fix" -gt 0 ]; then
+  warn_build=true
+  warning_reasons="${warning_reasons}⚠️ HIGH SLA BREACHES (no fixes): $high_sla_breaches_no_fix\n"
+fi
+if [ "$medium_sla_breaches" -gt 0 ]; then
   fail_build=true
-  failure_reasons="${failure_reasons}❌ LOW SLA BREACHES: With fixes: $low_sla_breaches, No fixes: $low_sla_breaches_no_fix\n"
+  failure_reasons="${failure_reasons}❌ MEDIUM SLA BREACHES (with fixes): $medium_sla_breaches\n"
+fi
+if [ "$medium_sla_breaches_no_fix" -gt 0 ]; then
+  warn_build=true
+  warning_reasons="${warning_reasons}⚠️ MEDIUM SLA BREACHES (no fixes): $medium_sla_breaches_no_fix\n"
+fi
+if [ "$low_sla_breaches" -gt 0 ]; then
+  fail_build=true
+  failure_reasons="${failure_reasons}❌ LOW SLA BREACHES (with fixes): $low_sla_breaches\n"
+fi
+if [ "$low_sla_breaches_no_fix" -gt 0 ]; then
+  warn_build=true
+  warning_reasons="${warning_reasons}⚠️ LOW SLA BREACHES (no fixes): $low_sla_breaches_no_fix\n"
 fi
 
 echo "fail_build=$fail_build" >> "$GITHUB_OUTPUT" || true
 echo "fail_build=$fail_build" >> "$GITHUB_ENV" || true
+echo "warn_build=$warn_build" >> "$GITHUB_OUTPUT" || true
+echo "warn_build=$warn_build" >> "$GITHUB_ENV" || true
 
 # Write summary to the step summary file
 {
@@ -201,26 +221,17 @@ echo "fail_build=$fail_build" >> "$GITHUB_ENV" || true
   echo
   echo "| Severity | Breaches (with fixes) | Breaches (no fixes) | SLA Threshold (with/no fixes) | Status |"
   echo "|----------|----------------------|---------------------|------------------------------|--------|"
-  if [ "$critical_sla_breaches" -gt 0 ] || [ "$critical_sla_breaches_no_fix" -gt 0 ]; then
-    echo "| 🔴 Critical | $critical_sla_breaches | $critical_sla_breaches_no_fix | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | ❌ Failed |"
-  else
-    echo "| 🔴 Critical | 0 | 0 | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | ✅ Passed |"
-  fi
-  if [ "$high_sla_breaches" -gt 0 ] || [ "$high_sla_breaches_no_fix" -gt 0 ]; then
-    echo "| 🟠 High | $high_sla_breaches | $high_sla_breaches_no_fix | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | ❌ Failed |"
-  else
-    echo "| 🟠 High | 0 | 0 | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | ✅ Passed |"
-  fi
-  if [ "$medium_sla_breaches" -gt 0 ] || [ "$medium_sla_breaches_no_fix" -gt 0 ]; then
-    echo "| 🟡 Medium | $medium_sla_breaches | $medium_sla_breaches_no_fix | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | ❌ Failed |"
-  else
-    echo "| 🟡 Medium | 0 | 0 | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | ✅ Passed |"
-  fi
-  if [ "$low_sla_breaches" -gt 0 ] || [ "$low_sla_breaches_no_fix" -gt 0 ]; then
-    echo "| 🔵 Low | $low_sla_breaches | $low_sla_breaches_no_fix | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | ❌ Failed |"
-  else
-    echo "| 🔵 Low | 0 | 0 | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | ✅ Passed |"
-  fi
+  sla_status() {
+    local with_fix=$1 no_fix=$2
+    if [ "$with_fix" -gt 0 ] && [ "$no_fix" -gt 0 ]; then echo "❌ Failed / ⚠️ Warning"
+    elif [ "$with_fix" -gt 0 ]; then echo "❌ Failed"
+    elif [ "$no_fix" -gt 0 ]; then echo "⚠️ Warning"
+    else echo "✅ Passed"; fi
+  }
+  echo "| 🔴 Critical | $critical_sla_breaches | $critical_sla_breaches_no_fix | $SLA_CRITICAL_WITH_FIX / $SLA_CRITICAL_NO_FIX days | $(sla_status "$critical_sla_breaches" "$critical_sla_breaches_no_fix") |"
+  echo "| 🟠 High | $high_sla_breaches | $high_sla_breaches_no_fix | $SLA_HIGH_WITH_FIX / $SLA_HIGH_NO_FIX days | $(sla_status "$high_sla_breaches" "$high_sla_breaches_no_fix") |"
+  echo "| 🟡 Medium | $medium_sla_breaches | $medium_sla_breaches_no_fix | $SLA_MEDIUM_WITH_FIX / $SLA_MEDIUM_NO_FIX days | $(sla_status "$medium_sla_breaches" "$medium_sla_breaches_no_fix") |"
+  echo "| 🔵 Low | $low_sla_breaches | $low_sla_breaches_no_fix | $SLA_LOW_WITH_FIX / $SLA_LOW_NO_FIX days | $(sla_status "$low_sla_breaches" "$low_sla_breaches_no_fix") |"
   echo
 
   if [ "$critical_no_fix" -gt 0 ] || [ "$high_no_fix" -gt 0 ] || [ "$medium_no_fix" -gt 0 ] || [ "$low_no_fix" -gt 0 ]; then
@@ -240,9 +251,20 @@ echo "fail_build=$fail_build" >> "$GITHUB_ENV" || true
     echo "❌ BUILD FAILED - Security checks failed"
     echo
     echo -e "$failure_reasons"
-  else
+  fi
+  if [ "$warn_build" = true ]; then
+    echo
+    echo "⚠️ WARNINGS - SLA breaches for issues without available fixes"
+    echo
+    echo -e "$warning_reasons"
+  fi
+  if [ "$fail_build" = false ] && [ "$warn_build" = false ]; then
     echo
     echo "✅ BUILD PASSED - All security checks passed"
+    echo
+  elif [ "$fail_build" = false ] && [ "$warn_build" = true ]; then
+    echo
+    echo "⚠️ BUILD PASSED WITH WARNINGS"
     echo
   fi
 } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true

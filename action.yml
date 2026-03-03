@@ -52,8 +52,11 @@ inputs:
 
 outputs:
   fail_build:
-    description: 'true if any thresholds or SLAs were breached and action failed'
+    description: 'true if any thresholds or SLAs were breached for issues with available fixes'
     value: ${{ steps.snyk_analysis.outputs.fail_build }}
+  warn_build:
+    description: 'true if SLA breaches detected for issues without available fixes'
+    value: ${{ steps.snyk_analysis.outputs.warn_build }}
 
 runs:
   using: "composite"
@@ -95,6 +98,7 @@ runs:
           const maxMedium = process.env.MAX_MEDIUM_ISSUES || '0';
           const maxLow = process.env.MAX_LOW_ISSUES || '0';
           const failBuild = process.env.fail_build || 'false';
+          const warnBuild = process.env.warn_build || 'false';
 
           // SLA breach counts
           const criticalSla = process.env.critical_sla_breaches || '0';
@@ -144,10 +148,17 @@ runs:
           comment += '| Severity | Breaches (with fixes) | Breaches (no fixes) | SLA Threshold (with/no fixes) | Status |\n';
           comment += '|----------|----------------------|---------------------|------------------------------|--------|\n';
 
-          const criticalSlaStatus = (parseInt(criticalSla) > 0 || parseInt(criticalSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
-          const highSlaStatus = (parseInt(highSla) > 0 || parseInt(highSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
-          const mediumSlaStatus = (parseInt(mediumSla) > 0 || parseInt(mediumSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
-          const lowSlaStatus = (parseInt(lowSla) > 0 || parseInt(lowSlaNoFix) > 0) ? '❌ Failed' : '✅ Passed';
+          function slaStatus(withFix, noFix) {
+            const wf = parseInt(withFix), nf = parseInt(noFix);
+            if (wf > 0 && nf > 0) return '❌ Failed / ⚠️ Warning';
+            if (wf > 0) return '❌ Failed';
+            if (nf > 0) return '⚠️ Warning';
+            return '✅ Passed';
+          }
+          const criticalSlaStatus = slaStatus(criticalSla, criticalSlaNoFix);
+          const highSlaStatus = slaStatus(highSla, highSlaNoFix);
+          const mediumSlaStatus = slaStatus(mediumSla, mediumSlaNoFix);
+          const lowSlaStatus = slaStatus(lowSla, lowSlaNoFix);
 
           comment += `| 🔴 Critical | ${criticalSla} | ${criticalSlaNoFix} | ${slaCriticalWithFix} / ${slaCriticalNoFix} days | ${criticalSlaStatus} |\n`;
           comment += `| 🟠 High | ${highSla} | ${highSlaNoFix} | ${slaHighWithFix} / ${slaHighNoFix} days | ${highSlaStatus} |\n`;
@@ -167,6 +178,9 @@ runs:
           if (failBuild === 'true') {
             comment += '❌ BUILD FAILED - Security checks failed\n\n';
             comment += 'Please review and fix the security vulnerabilities before merging.\n';
+          } else if (warnBuild === 'true') {
+            comment += '⚠️ BUILD PASSED WITH WARNINGS - SLA breaches detected for issues without available fixes\n\n';
+            comment += 'Consider reviewing these vulnerabilities when fixes become available.\n';
           } else {
             comment += '✅ BUILD PASSED - All security checks passed\n\n';
           }
