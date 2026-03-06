@@ -165,6 +165,41 @@ runs:
           comment += `| 🟡 Medium | ${mediumSla} | ${mediumSlaNoFix} | ${slaMediumWithFix} / ${slaMediumNoFix} days | ${mediumSlaStatus} |\n`;
           comment += `| 🔵 Low | ${lowSla} | ${lowSlaNoFix} | ${slaLowWithFix} / ${slaLowNoFix} days | ${lowSlaStatus} |\n\n`;
 
+          if (totalSlaBreaches > 0) {
+            function addVulnerabilityDetails(severityName, icon, details, threshold) {
+              if (!details || details.trim() === '') return;
+              
+              const vulns = details.split(';;').filter(v => v.trim());
+              if (vulns.length === 0) return;
+              
+              comment += `### ${icon} ${severityName} Severity - SLA Breached Issues (with fixes)\n\n`;
+              comment += `Showing ${vulns.length} issue(s) that have exceeded the ${threshold}-day SLA threshold:\n\n`;
+              
+              vulns.forEach((vuln, idx) => {
+                const parts = vuln.split('|');
+                if (parts.length >= 6) {
+                  const [id, title, pkg, daysAgo, cvssScore, cve] = parts;
+                  comment += `${idx + 1}. **${title}**\n`;
+                  comment += `   - ID: \`${id}\`\n`;
+                  comment += `   - Package: \`${pkg}\`\n`;
+                  comment += `   - Published: ${daysAgo} days ago (SLA: ${threshold} days)\n`;
+                  if (cvssScore && cvssScore !== '0') {
+                    comment += `   - CVSS Score: ${cvssScore}\n`;
+                  }
+                  if (cve && cve !== 'N/A') {
+                    comment += `   - CVE: ${cve}\n`;
+                  }
+                  comment += '\n';
+                }
+              });
+            }
+
+            addVulnerabilityDetails('Critical', '🔴', process.env.critical_sla_details || '', slaCriticalWithFix);
+            addVulnerabilityDetails('High', '🟠', process.env.high_sla_details || '', slaHighWithFix);
+            addVulnerabilityDetails('Medium', '🟡', process.env.medium_sla_details || '', slaMediumWithFix);
+            addVulnerabilityDetails('Low', '🔵', process.env.low_sla_details || '', slaLowWithFix);
+          }
+
           if (parseInt(criticalNoFix) > 0 || parseInt(highNoFix) > 0 || parseInt(mediumNoFix) > 0 || parseInt(lowNoFix) > 0) {
             comment += '### ℹ️ Vulnerabilities Without Available Fixes (Informational Only)\n\n';
             comment += 'The following vulnerabilities were detected but **do not have fixes available** (no upgrade or patch). These are excluded from failure thresholds:\n\n';

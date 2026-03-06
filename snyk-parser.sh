@@ -99,6 +99,38 @@ high_sla_breaches_no_fix=$(count_sla_breaches "high" "false" "$SLA_HIGH_NO_FIX")
 medium_sla_breaches_no_fix=$(count_sla_breaches "medium" "false" "$SLA_MEDIUM_NO_FIX")
 low_sla_breaches_no_fix=$(count_sla_breaches "low" "false" "$SLA_LOW_NO_FIX")
 
+echo "Generating detailed SLA breach lists..."
+
+get_breached_details() {
+  local severity=$1
+  local threshold=$2
+  
+  echo "$SNYK_DATA" | jq --arg current "$current_time" --arg threshold "$threshold" --arg sev "$severity" -r '
+    [.vulnerabilities[]? |
+     select(.severity == $sev and (.isUpgradable == true or .isPatchable == true)) |
+     select(.publicationTime != null) |
+     .publicationTime |= (. | sub("\\.[0-9]+Z$"; "Z")) |
+     select(($current | tonumber) - (.publicationTime | fromdateiso8601) > ($threshold | tonumber * 86400)) |
+     {
+       id: .id,
+       title: (.title // .id),
+       package: ((.packageName // .name) + "@" + .version),
+       daysAgo: ((($current | tonumber) - (.publicationTime | fromdateiso8601)) / 86400 | floor),
+       cvssScore: (.cvssScore // 0),
+       cve: (.identifiers.CVE[0] // "N/A")
+     }] |
+    sort_by(-.daysAgo) |
+    .[:20] |
+    map("\(.id)|\(.title)|\(.package)|\(.daysAgo)|\(.cvssScore)|\(.cve)") |
+    join(";;")
+  ' 2>/dev/null || echo ""
+}
+
+critical_sla_details=$(get_breached_details "critical" "$SLA_CRITICAL_WITH_FIX")
+high_sla_details=$(get_breached_details "high" "$SLA_HIGH_WITH_FIX")
+medium_sla_details=$(get_breached_details "medium" "$SLA_MEDIUM_WITH_FIX")
+low_sla_details=$(get_breached_details "low" "$SLA_LOW_WITH_FIX")
+
 
 echo "Exporting SLA counts to GITHUB_ENV..."
 echo "critical_sla_breaches=$critical_sla_breaches" >> "$GITHUB_ENV"
@@ -117,6 +149,21 @@ echo "SLA_CRITICAL_NO_FIX=$SLA_CRITICAL_NO_FIX" >> "$GITHUB_ENV"
 echo "SLA_HIGH_NO_FIX=$SLA_HIGH_NO_FIX" >> "$GITHUB_ENV"
 echo "SLA_MEDIUM_NO_FIX=$SLA_MEDIUM_NO_FIX" >> "$GITHUB_ENV"
 echo "SLA_LOW_NO_FIX=$SLA_LOW_NO_FIX" >> "$GITHUB_ENV"
+
+{
+  echo "critical_sla_details<<EOF"
+  echo "$critical_sla_details"
+  echo "EOF"
+  echo "high_sla_details<<EOF"
+  echo "$high_sla_details"
+  echo "EOF"
+  echo "medium_sla_details<<EOF"
+  echo "$medium_sla_details"
+  echo "EOF"
+  echo "low_sla_details<<EOF"
+  echo "$low_sla_details"
+  echo "EOF"
+} >> "$GITHUB_ENV"
 
 echo "Generating summary and checking thresholds..."
 fail_build=false
