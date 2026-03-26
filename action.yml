@@ -83,7 +83,7 @@ runs:
       if: ${{ always() && github.event_name == 'pull_request' }}
       uses: actions/github-script@v7
       with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+        github-token: ${{ github.token }}
         script: |
           const criticalCount = process.env.critical_count || '0';
           const criticalNoFix = process.env.critical_no_fix || '0';
